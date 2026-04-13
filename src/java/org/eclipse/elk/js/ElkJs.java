@@ -88,32 +88,28 @@ public class ElkJs implements EntryPoint {
             }
         }
 
-        // the below works for real web workers but not for 'simulated' web worker, such as for nodejs
-        // if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
-        if (typeof document === "undefined" && typeof self !== "undefined") {
-            // real web worker
-            var dispatcher = new Dispatcher(self)
-            self.onmessage = dispatcher.saveDispatch
-        } else if (typeof module !== "undefined" && module.exports) {
-            // export a fake worker (note that the post/receive functions are inverted)
+        // FakeWorker runs layout inline via setTimeout(0), mimicking the
+        // browser Worker API. Declared unconditionally so that consumers
+        // can always supply it as a workerFactory regardless of how the
+        // env-detection branch below resolves.
+        function FakeWorker(url) {
+            var _this = this;
 
-            // let it look like a regular message (add the 'data' key)
-            function FakeWorker(url) {
-                var _this = this;
+            // post messages
+            this.dispatcher = new Dispatcher({
+                postMessage: function(msg) { _this.onmessage({ data: msg }) }
+            })
 
-                // post messages
-                this.dispatcher = new Dispatcher({
-                    postMessage: function(msg) { _this.onmessage({ data: msg }) }
-                })
-
-                // receive messages
-                this.postMessage = function(msg) {
-                    setTimeout(function() {
-                        _this.dispatcher.saveDispatch({ data: msg })
-                    }, 0);
-                }
+            // receive messages
+            this.postMessage = function(msg) {
+                setTimeout(function() {
+                    _this.dispatcher.saveDispatch({ data: msg })
+                }, 0);
             }
+        }
 
+        // Always expose FakeWorker via CJS exports when available.
+        if (typeof module !== "undefined" && module.exports) {
             Object.defineProperty(exports, "__esModule", {
               value: true
             })
@@ -121,8 +117,22 @@ public class ElkJs implements EntryPoint {
                 'default': FakeWorker,
                 Worker: FakeWorker
             }
-        } else {
-            // shouldn't get here, panic!
+        }
+
+        // Auto-wire as the real-Worker message handler if we appear to be
+        // running inside one. This detection cannot reliably distinguish
+        // Node >= 22 / Bun main threads (where `self` is now a global
+        // alias for `globalThis`) from an actual Worker scope, but that
+        // is now cosmetic: a spurious assignment to self.onmessage in
+        // the main thread is harmless because no main-thread code reads
+        // it. See also WorkerGlobalScope check noted below, which is
+        // correct for real browser Workers but not for simulated
+        // (web-worker / worker_threads) Workers.
+        //
+        // if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
+        if (typeof document === "undefined" && typeof self !== "undefined") {
+            var dispatcher = new Dispatcher(self)
+            self.onmessage = dispatcher.saveDispatch
         }
 
     }-*/;
