@@ -2,7 +2,6 @@
 build/
 gwt-unitCache/
 node_modules/
-lib/
 bin/
 *.sublime-*
 .project
